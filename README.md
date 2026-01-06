@@ -55,3 +55,5 @@ python3 fastmail_cli.py attachments <email_id> --download --out ./attachments
 
 - Uses the official Fastmail JMAP API session endpoint.
 - Read-only by design. No mutation endpoints are called.
+- This project is not affiliated with, endorsed by, or sponsored by Fastmail.
+- Provided "as is" without warranty; use at your own risk.
