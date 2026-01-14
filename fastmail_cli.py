@@ -231,7 +231,23 @@ def list_inbox(client, limit=20, position=0):
     return {"mailboxId": inbox_id, "total": query_data.get("total", 0), "list": get_data.get("list", [])}
 
 
-def build_search_filter(args, inbox_id):
+def find_mailbox_by_name(client, name):
+    """Find a mailbox by name (case-insensitive)."""
+    mailbox_resp = client.call(
+        [["Mailbox/get", {"accountId": client.account_id}, "mb"]]
+    )
+    _, mailbox_data = extract_method_response(mailbox_resp["methodResponses"], "mb")
+    mailboxes = mailbox_data.get("list", [])
+    
+    name_lower = name.lower()
+    for mb in mailboxes:
+        if mb.get("name", "").lower() == name_lower:
+            return mb["id"]
+    
+    raise RuntimeError(f"Mailbox/label '{name}' not found. Available: {', '.join([m.get('name', '') for m in mailboxes])}")
+
+
+def build_search_filter(args, inbox_id, label_id=None):
     filter_obj = {}
     if args.query:
         filter_obj["text"] = args.query
@@ -251,7 +267,11 @@ def build_search_filter(args, inbox_id):
         filter_obj["before"] = args.before
     if args.after:
         filter_obj["after"] = args.after
-    if not args.all_mailboxes:
+    
+    # Priority: --label > default inbox (if not --all-mailboxes)
+    if label_id:
+        filter_obj["inMailbox"] = label_id
+    elif not args.all_mailboxes:
         filter_obj["inMailbox"] = inbox_id
     return filter_obj
 
@@ -259,7 +279,13 @@ def build_search_filter(args, inbox_id):
 def search_mail(client, args):
     client.require_account()
     inbox_id = None
-    if not args.all_mailboxes:
+    label_id = None
+    
+    # If --label is specified, find that mailbox
+    if hasattr(args, 'label') and args.label:
+        label_id = find_mailbox_by_name(client, args.label)
+    elif not args.all_mailboxes:
+        # Default to inbox if not searching all mailboxes
         mailbox_resp = client.call(
             [["Mailbox/query", {"accountId": client.account_id, "filter": {"role": "inbox"}, "limit": 1}, "mb"]]
         )
@@ -269,7 +295,7 @@ def search_mail(client, args):
             raise RuntimeError("Inbox mailbox not found.")
         inbox_id = inbox_ids[0]
 
-    filter_obj = build_search_filter(args, inbox_id)
+    filter_obj = build_search_filter(args, inbox_id, label_id)
     query_resp = client.call(
         [
             [
@@ -653,6 +679,10 @@ def build_parser():
         "--all-mailboxes",
         action="store_true",
         help="Search all mailboxes (default: Inbox only).",
+    )
+    search_parser.add_argument(
+        "--label",
+        help="Search in specific mailbox/label by name (e.g., 'Travel').",
     )
 
     read_parser = subparsers.add_parser("read", help="Read a single email by id.")
